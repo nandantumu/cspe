@@ -191,3 +191,18 @@ def ns_to_s_and_ns(ns):
     s = ns // 1_000_000_000
     ns = ns % 1_000_000_000
     return int(s), int(ns)
+
+
+def s_to_s_and_ns(s):
+    """
+    Convert seconds to seconds and nanoseconds.
+
+    Args:
+        s: Time in seconds
+    Returns:
+        tuple: (seconds, nanoseconds)
+    """
+    ns = s * 1_000_000_000
+    s = ns // 1_000_000_000
+    ns = ns % 1_000_000_000
+    return int(s), int(ns)

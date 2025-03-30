@@ -171,11 +171,14 @@ class ContextIdentifier:
         if self.image_db.size() == 0:
             return []
 
-        # Find nearest neighbors
-        distances, indices = self.tree.query(features, k=1)
+        try:
+            # Find nearest neighbors
+            distances, indices = self.tree.query(features, k=1)
 
-        # Get the corresponding cluster IDs
-        nearest_clusters = [self.clusters[i] for i in indices]
+            # Get the corresponding cluster IDs
+            nearest_clusters = [self.clusters[i] for i in indices]
+        except AttributeError:
+            nearest_clusters = [-1] * len(features)
 
         return nearest_clusters
 
@@ -202,15 +205,114 @@ class ContextIdentifier:
         self.tree = KDTree(all_features)
 
         # Fit DBSCAN
-        self.dbscan = HDBSCAN(min_cluster_size=self.min_samples, n_jobs=4)
+        self.dbscan = HDBSCAN(
+            min_cluster_size=self.min_samples, n_jobs=4, allow_single_cluster=True
+        )
         labels = self.dbscan.fit_predict(all_features)
 
-        self.clusters = labels
+        persistent_labels = self.ensure_cluster_persistence(labels)
+
+        self.clusters = persistent_labels
 
         # The last label corresponds to the current image
-        current_label = labels[-1]
+        current_label = persistent_labels[-1]
 
         return int(current_label)
+
+    def ensure_cluster_persistence(self, new_labels):
+        """
+        Ensure that the clusters are persistent across different runs of DBSCAN.
+
+        Args:
+            new_labels: New cluster labels from DBSCAN
+
+        Returns:
+            list: Updated cluster labels
+        """
+        # If there are no previous clusters, just return the new labels
+        if len(self.clusters) == 0:
+            return new_labels
+
+        # Calculate centroids for previous clusters
+        prev_unique_labels = np.unique(self.clusters)
+        prev_centroids = {}
+
+        for prev_label in prev_unique_labels:
+            if prev_label == -1:  # Skip noise points
+                continue
+
+            # Get indices of points in this cluster
+            indices = np.where(self.clusters == prev_label)[0]
+
+            # Calculate centroid using feature vectors
+            features = np.vstack(
+                [self.image_db[int(idx)]["information"] for idx in indices]
+            )
+            centroid = np.mean(features, axis=0)
+            prev_centroids[prev_label] = centroid
+
+        # Calculate centroids for new clusters
+        new_unique_labels = np.unique(new_labels)
+        new_centroids = {}
+
+        for new_label in new_unique_labels:
+            if new_label == -1:  # Skip noise points
+                continue
+
+            # Get indices of points in this cluster
+            indices = np.where(new_labels == new_label)[0]
+
+            # Calculate centroid
+            features = np.vstack(
+                [self.image_db[int(idx)]["information"] for idx in indices]
+            )
+            centroid = np.mean(features, axis=0)
+            new_centroids[new_label] = centroid
+
+        # Create a mapping from new labels to old labels
+        label_mapping = {-1: -1}  # Noise points stay as noise
+
+        # Distance threshold for considering centroids as the same cluster
+        threshold = 1e6
+
+        # For each previous centroid, find the closest new centroid
+        for prev_label, prev_centroid in prev_centroids.items():
+            closest_new_label = None
+            min_distance = float("inf")
+
+            for new_label, new_centroid in new_centroids.items():
+                # Skip if this new label is already mapped
+                if new_label in label_mapping:
+                    continue
+
+                # Calculate Euclidean distance between centroids
+                distance = np.linalg.norm(prev_centroid - new_centroid)
+
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_new_label = new_label
+
+            # If the closest centroid is within threshold, assign the previous ID
+            if closest_new_label is not None and min_distance < threshold:
+                label_mapping[closest_new_label] = prev_label
+
+        # Assign new IDs to unmapped clusters
+        max_label = max(
+            [label for label in prev_unique_labels if label != -1], default=0
+        )
+        for new_label in new_unique_labels:
+            if new_label == -1:
+                continue
+            if new_label not in label_mapping:
+                max_label += 1
+                label_mapping[new_label] = max_label
+
+        # Apply the mapping to create updated labels
+        updated_labels = np.array(
+            [label_mapping.get(label, label) for label in new_labels]
+        )
+
+        return updated_labels
 
     def get_cluster_durations(self):
         """
@@ -237,7 +339,6 @@ class ContextIdentifier:
         # Calculate the duration for each cluster by looking up the timestamps in the database
         for cluster_id, intervals in cluster_durations.items():
             for start, end in intervals:
-                print("Start: ", start, "End: ", end)
                 start_time = self.image_db[start]["timestamp"]
                 end_time = self.image_db[end]["timestamp"]
                 cluster_duration_timestamps[cluster_id].append((start_time, end_time))

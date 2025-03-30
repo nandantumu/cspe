@@ -1,27 +1,26 @@
 import os
 
-import rclpy
-from rclpy.node import Node
-from ament_index_python.packages import get_package_share_directory
-import torch
 import cv2
-
-from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
-from PIL import Image
-from cv_bridge import CvBridge, CvBridgeError
+import numpy as np
+import rclpy
+import torch
+from ament_index_python.packages import get_package_share_directory
+from builtin_interfaces.msg import Time
 from context_msgs.msg import (
+    ContextDuration,
+    ContextDurationMap,
     ContextStamped,
     Duration,
     DurationList,
-    ContextDuration,
-    ContextDurationMap,
 )
+from cv_bridge import CvBridge, CvBridgeError
+from PIL import Image
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.node import Node
 from sensor_msgs.msg import Image as ROSImage
-from builtin_interfaces.msg import Time
-
 
 from cspe.identification.context_id import ContextIdentifier
-from cspe.utilities import ns_to_s_and_ns
+from cspe.utilities import s_to_s_and_ns
 
 
 class ContextIdentificationNode(Node):
@@ -64,7 +63,7 @@ class ContextIdentificationNode(Node):
         )
 
         self.clustering_timer = self.create_timer(
-            2.0,
+            5.0,
             self.reprocess_cluster_callback,
             callback_group=self.clustering_process_exec_group,
         )
@@ -126,9 +125,9 @@ class ContextIdentificationNode(Node):
         for key in cluster_durations.keys():
             key_durations = []
             for duration in cluster_durations[key]:
-                s, ns = ns_to_s_and_ns(duration[0])
+                s, ns = s_to_s_and_ns(duration[0])
                 start_time = Time(sec=s, nanosec=ns)
-                s, ns = ns_to_s_and_ns(duration[1])
+                s, ns = s_to_s_and_ns(duration[1])
                 end_time = Time(sec=s, nanosec=ns)
                 key_durations.append(Duration(start=start_time, end=end_time))
             durations_list.append(
@@ -137,9 +136,10 @@ class ContextIdentificationNode(Node):
                 )
             )
         cluster_duration_msg = ContextDurationMap(
-            header=self.get_clock().now().to_msg(),
             pairs=durations_list,
         )
+        cluster_duration_msg.header.stamp = self.get_clock().now().to_msg()
+        cluster_duration_msg.header.frame_id = "robot"
         self.cluster_duration_publisher.publish(cluster_duration_msg)
 
 
