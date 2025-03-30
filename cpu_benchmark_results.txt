@@ -1,0 +1,2 @@
+CPU: 
+Single Image:0.7083 | Batch Inference: 0.8586 | Batch/BatchSize: 0.0859

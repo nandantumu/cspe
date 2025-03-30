@@ -1,0 +1,25 @@
+[project]
+name = "cspe"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "clip",
+    "ftfy>=6.3.1",
+    "matplotlib>=3.10.1",
+    "numpy>=2.2.4",
+    "pit",
+    "regex>=2024.11.6",
+    "scipy>=1.15.2",
+    "tqdm>=4.67.1",
+]
+
+[tool.uv.sources]
+clip = { git = "https://github.com/openai/CLIP.git" }
+pit = { git = "https://github.com/nandantumu/PIT.git" }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+]

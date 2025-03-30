@@ -1,0 +1,5 @@
+GPU:
+Single Image:0.0285 | Batch Inference: 0.1160 | Batch/BatchSize: 0.0116
+Speedup (single image): 25.17 | Speedup (batch): 7.37
+Batch Processing Speedup: 2.46
+            
