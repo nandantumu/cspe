@@ -2,6 +2,7 @@ import threading
 import numpy as np
 import copy
 import pickle
+import bisect
 
 
 class ImageDatabase:
@@ -176,6 +177,165 @@ class ImageDatabase:
             return database
         except Exception as e:
             print(f"Error loading database: {e}")
+            return None
+
+
+class StateDB:
+    """This is a thread-safe database for storing state information."""
+
+    def __init__(self, max_size=10000):
+        """
+        Initialize the state database.
+
+        Args:
+            max_size: Maximum number of states to store
+        """
+        self.max_size = max_size
+        self.lock = threading.RLock()
+        self.items = []  # List of dicts containing state information
+        self.timestamps = []  # List of timestamps for each state entry
+
+    def add(self, **kwargs):
+        """
+        Add a state to the database.
+
+        Args:
+            kwargs: State information
+
+        Returns:
+            int: The current database size
+        """
+        db_entry = kwargs
+        assert "timestamp" in db_entry, "Timestamp is required in the state entry"
+
+        with self.lock:
+            self.items.append(db_entry)
+            self.timestamps.append(db_entry["timestamp"])
+
+            # Remove oldest entries if database is too large
+            while len(self.items) > self.max_size:
+                self.items.pop(0)
+
+            return len(self.items)
+
+    def get_copy(self):
+        """
+        Return a deep copy of all state entries in the database.
+        """
+        with self.lock:
+            return copy.deepcopy(self.items)
+
+    def get_item(self, index):
+        """
+        Get a state entry by index.
+
+        Args:
+            index: The index of the state entry.
+
+        Returns:
+            dict: A copy of the state entry if it exists, otherwise None.
+        """
+        with self.lock:
+            if 0 <= index < len(self.items):
+                return self.items[index]
+            return None
+
+    def __getitem__(self, key):
+        """
+        Enable Python-style indexing and slicing for the database.
+
+        Args:
+            key: An integer index or a slice.
+
+        Returns:
+            dict or list: A copy of the state entry (or entries) at the specified index/slice.
+
+        Raises:
+            TypeError: If key is not an integer or a slice.
+        """
+        with self.lock:
+            if isinstance(key, (int, slice)):
+                return self.items[key]
+            raise TypeError("Database indices must be integers or slices")
+
+    def get_index_slice_by_duration(self, start, end):
+        """
+        Get the closes
+
+        Args:
+            start: Start timestamp
+            end: End timestamp
+
+        Returns:
+            slice: A slice object representing the range of indices that fall within the specified duration.
+        """
+
+        # Use binary search on the sorted list of timestamps to find the start and end indices.
+        start_index = bisect.bisect_left(self.timestamps, start)
+        end_index = bisect.bisect_right(self.timestamps, end) - 1
+
+        if start_index <= end_index:
+            return slice(start_index, end_index + 1)
+        return slice(None)
+
+    def clear(self):
+        """
+        Clear all state entries in the database.
+        """
+        with self.lock:
+            self.items = []
+
+    def size(self):
+        """
+        Get the current number of state entries in the database.
+
+        Returns:
+            int: The number of state entries.
+        """
+        with self.lock:
+            return len(self.items)
+
+    def save_to_disk(self, filepath):
+        """
+        Serialize the state database to disk using pickle.
+
+        Args:
+            filepath: Path to the file where the database will be saved.
+
+        Returns:
+            bool: True if the save operation is successful, False otherwise.
+        """
+        with self.lock:
+            try:
+                with open(filepath, "wb") as f:
+                    pickle.dump(self.items, f)
+                return True
+            except Exception as e:
+                print(f"Error saving state database: {e}")
+                return False
+
+    @classmethod
+    def load_from_disk(cls, filepath, max_size=10000):
+        """
+        Deserialize the state database from disk.
+
+        Args:
+            filepath: Path to the file containing the serialized database.
+            max_size: Maximum number of state entries to retain.
+
+        Returns:
+            StateDB: A new instance populated with the loaded state entries,
+                     or None if the load operation fails.
+        """
+        try:
+            with open(filepath, "rb") as f:
+                items = pickle.load(f)
+            state_db = cls(max_size=max_size)
+            with state_db.lock:
+                state_db.items = items[-max_size:] if len(items) > max_size else items
+            return state_db
+        except Exception as e:
+            print(f"Error loading state database: {e}")
             return None
 
 

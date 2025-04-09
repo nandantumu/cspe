@@ -46,7 +46,7 @@ class ContextIdentifier:
         # DBSCAN parameters
         self.dbscan = None
         self.eps = 0.5  # Default DBSCAN distance threshold
-        self.min_samples = 40  # Default minimum samples for DBSCAN
+        self.min_samples = 100  # Default minimum samples for DBSCAN
 
         # Thread-safe batch queue
         self.queue_lock = threading.RLock()
